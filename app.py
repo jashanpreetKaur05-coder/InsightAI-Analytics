@@ -1,1142 +1,1327 @@
-"""
-InsightAI Analytics
-===================
-
-Interactive AI-ready business analytics dashboard.
-
-Current capabilities:
-- Multi-format dataset upload
-- Dataset overview
-- Data quality analysis
-- Automated business insights
-- Interactive visualizations
-- Statistical analysis
-- Data filtering
-"""
-
-import io
-
-import pandas as pd
 import streamlit as st
-
-from modules.data_quality import (
-    analyze_data_quality,
-)
-
-from modules.insights import (
-    generate_insights,
-)
-
-from modules.statistics import (
-    numeric_summary,
-    strongest_correlations,
-    detect_numeric_skewness,
-)
-
-from modules.visualizations import (
-    create_histogram,
-    create_boxplot,
-    create_bar_chart,
-    create_scatter_plot,
-    create_correlation_heatmap,
-    create_time_series,
-)
-
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
 
 # ============================================================
-# PAGE CONFIGURATION
+# PAGE CONFIG
 # ============================================================
 
 st.set_page_config(
     page_title="InsightAI Analytics",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
-
 
 # ============================================================
 # CUSTOM CSS
 # ============================================================
 
-st.markdown(
-    """
-    <style>
-
-    .main-title {
-        font-size: 42px;
-        font-weight: 700;
-        margin-bottom: 5px;
+st.markdown("""
+<style>
+    .main {
+        padding-top: 1rem;
     }
 
-    .subtitle {
-        font-size: 18px;
-        color: #666666;
-        margin-bottom: 25px;
+    .metric-card {
+        background: #f8fafc;
+        padding: 18px;
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
     }
 
-    .insight-card {
+    .insight-box {
         padding: 16px;
         border-radius: 10px;
-        border: 1px solid #dddddd;
-        margin-bottom: 10px;
+        background: #eff6ff;
+        border-left: 5px solid #2563eb;
+        margin-bottom: 12px;
     }
 
-    .section-title {
-        font-size: 26px;
-        font-weight: 600;
-        margin-top: 20px;
+    .recommendation-box {
+        padding: 18px;
+        border-radius: 10px;
+        background: #f0fdf4;
+        border-left: 5px solid #16a34a;
+        margin-bottom: 12px;
     }
 
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ============================================================
-# SESSION STATE
-# ============================================================
-
-if "data" not in st.session_state:
-    st.session_state.data = None
-
-if "file_name" not in st.session_state:
-    st.session_state.file_name = None
-
-
-# ============================================================
-# DATA LOADING
-# ============================================================
-
-def load_uploaded_file(
-    uploaded_file,
-) -> pd.DataFrame:
-    """
-    Load a supported uploaded dataset.
-
-    Supported formats:
-        CSV
-        XLSX
-        XLS
-        JSON
-        Parquet
-    """
-
-    if uploaded_file is None:
-        raise ValueError("No file was uploaded.")
-
-    file_name = uploaded_file.name.lower()
-
-    file_bytes = uploaded_file.getvalue()
-
-    if file_name.endswith(".csv"):
-
-        try:
-            return pd.read_csv(
-                io.BytesIO(file_bytes)
-            )
-        except UnicodeDecodeError:
-
-            return pd.read_csv(
-                io.BytesIO(file_bytes),
-                encoding="latin-1",
-            )
-
-    if file_name.endswith(".xlsx"):
-
-        return pd.read_excel(
-            io.BytesIO(file_bytes),
-            engine="openpyxl",
-        )
-
-    if file_name.endswith(".xls"):
-
-        return pd.read_excel(
-            io.BytesIO(file_bytes)
-        )
-
-    if file_name.endswith(".json"):
-
-        return pd.read_json(
-            io.BytesIO(file_bytes)
-        )
-
-    if file_name.endswith(".parquet"):
-
-        return pd.read_parquet(
-            io.BytesIO(file_bytes)
-        )
-
-    raise ValueError(
-        "Unsupported file format. "
-        "Please upload CSV, Excel, JSON, or Parquet."
-    )
+    h1 {
+        font-weight: 700;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 
 # ============================================================
 # HEADER
 # ============================================================
 
-st.markdown(
-    '<div class="main-title">InsightAI Analytics</div>',
-    unsafe_allow_html=True,
-)
-
-st.markdown(
-    """
-    <div class="subtitle">
-    Interactive business intelligence, automated data analysis,
-    statistical insights and predictive analytics.
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.title("📊 InsightAI Analytics")
+st.caption(
+    "Interactive business intelligence, automated data analysis, "
+    "statistical insights and predictive analytics."
 )
 
 
 # ============================================================
-# SIDEBAR
+# DATA UPLOAD
 # ============================================================
 
-with st.sidebar:
+st.sidebar.header("📁 Dataset")
 
-    st.header("Dataset")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload your CSV dataset",
+    type=["csv"]
+)
 
-    uploaded_file = st.file_uploader(
-        "Upload your dataset",
-        type=[
-            "csv",
-            "xlsx",
-            "xls",
-            "json",
-            "parquet",
-        ],
-        help=(
-            "Upload a structured dataset for automated "
-            "analysis."
-        ),
-    )
+if uploaded_file is None:
+    st.info("👆 Upload a CSV dataset from the sidebar to begin.")
+    st.markdown("""
+    ### What this dashboard provides
 
-    if uploaded_file is not None:
-
-        if (
-            st.session_state.file_name
-            != uploaded_file.name
-        ):
-
-            try:
-
-                df = load_uploaded_file(
-                    uploaded_file
-                )
-
-                st.session_state.data = df
-                st.session_state.file_name = (
-                    uploaded_file.name
-                )
-
-                st.success(
-                    "Dataset loaded successfully."
-                )
-
-            except Exception as error:
-
-                st.session_state.data = None
-                st.session_state.file_name = None
-
-                st.error(
-                    f"Unable to load dataset: {error}"
-                )
-
-    st.divider()
-
-    st.caption(
-        "InsightAI Analytics"
-    )
-
-    st.caption(
-        "Data stays inside the running application "
-        "unless external AI/API services are explicitly "
-        "connected later."
-    )
-
-
-# ============================================================
-# CHECK DATASET
-# ============================================================
-
-df = st.session_state.data
-
-
-if df is None:
-
-    st.info(
-        "Upload a dataset from the sidebar to begin analysis."
-    )
-
-    st.markdown(
-        """
-        ### What this application can analyze
-
-        **Dataset structure**
-        - Rows and columns
-        - Data types
-        - Numerical and categorical variables
-        - Unique values
-
-        **Data quality**
-        - Missing values
-        - Duplicate records
-        - Constant columns
-        - Potential identifiers
-        - Outliers
-
-        **Analytics**
-        - Distributions
-        - Correlations
-        - Relationships
-        - Category analysis
-        - Statistical summaries
-
-        **Coming next**
-        - Natural-language data questions
-        - Automatic target detection
-        - Machine-learning predictions
-        - Forecasting
-        - Model comparison
-        - Model evaluation
-        """
-    )
-
+    - 📌 Business KPIs
+    - 📈 Interactive trends
+    - 🌍 Regional analysis
+    - 🛍️ Product analysis
+    - 📢 Marketing analysis
+    - 👥 Customer analysis
+    - 🔵 Correlation analysis
+    - 📦 Outlier detection
+    - 🧠 Automated business recommendations
+    - 🧹 Data-quality assessment
+    """)
     st.stop()
 
 
 # ============================================================
-# BASIC VALIDATION
+# LOAD DATA
 # ============================================================
 
-if df.empty:
-
-    st.error(
-        "The uploaded dataset contains no rows."
-    )
-
+try:
+    df = pd.read_csv(uploaded_file)
+except Exception as e:
+    st.error(f"Unable to read the CSV file: {e}")
     st.stop()
 
+df_original = df.copy()
+
+st.sidebar.success("Dataset loaded successfully.")
 
 # ============================================================
-# DATASET HEADER
+# BASIC CLEANING
 # ============================================================
 
-st.success(
-    f"Loaded: {st.session_state.file_name}"
-)
+# Remove completely empty rows
+df = df.dropna(how="all").copy()
+
+# Convert Date if available
+if "Date" in df.columns:
+    try:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    except Exception:
+        pass
 
 
 # ============================================================
-# KPI CARDS
+# COLUMN IDENTIFICATION
 # ============================================================
 
-row_count = df.shape[0]
-column_count = df.shape[1]
+numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+categorical_cols = df.select_dtypes(
+    include=["object", "category", "bool"]
+).columns.tolist()
 
-numeric_count = len(
-    df.select_dtypes(
-        include="number"
-    ).columns
-)
+date_col = "Date" if "Date" in df.columns else None
 
-categorical_count = len(
-    df.select_dtypes(
-        include=[
-            "object",
-            "category",
-            "bool",
+
+# ============================================================
+# SIDEBAR FILTERS
+# ============================================================
+
+st.sidebar.header("🎛️ Filters")
+
+filtered_df = df.copy()
+
+# Region
+if "Region" in df.columns:
+    regions = sorted(df["Region"].dropna().astype(str).unique())
+
+    selected_regions = st.sidebar.multiselect(
+        "Region",
+        regions,
+        default=regions
+    )
+
+    filtered_df = filtered_df[
+        filtered_df["Region"].astype(str).isin(selected_regions)
+    ]
+
+
+# Product
+if "Product" in df.columns:
+    products = sorted(df["Product"].dropna().astype(str).unique())
+
+    selected_products = st.sidebar.multiselect(
+        "Product",
+        products,
+        default=products
+    )
+
+    filtered_df = filtered_df[
+        filtered_df["Product"].astype(str).isin(selected_products)
+    ]
+
+
+# Customer Type
+if "Customer_Type" in df.columns:
+    customer_types = sorted(
+        df["Customer_Type"].dropna().astype(str).unique()
+    )
+
+    selected_customer_types = st.sidebar.multiselect(
+        "Customer Type",
+        customer_types,
+        default=customer_types
+    )
+
+    filtered_df = filtered_df[
+        filtered_df["Customer_Type"].astype(str).isin(
+            selected_customer_types
+        )
+    ]
+
+
+# Marketing Channel
+if "Marketing_Channel" in df.columns:
+    channels = sorted(
+        df["Marketing_Channel"].dropna().astype(str).unique()
+    )
+
+    selected_channels = st.sidebar.multiselect(
+        "Marketing Channel",
+        channels,
+        default=channels
+    )
+
+    filtered_df = filtered_df[
+        filtered_df["Marketing_Channel"].astype(str).isin(
+            selected_channels
+        )
+    ]
+
+
+# Date filter
+if date_col and df[date_col].notna().any():
+
+    min_date = df[date_col].min().date()
+    max_date = df[date_col].max().date()
+
+    date_range = st.sidebar.date_input(
+        "Date Range",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date
+    )
+
+    if len(date_range) == 2:
+        start_date, end_date = date_range
+
+        filtered_df = filtered_df[
+            (filtered_df[date_col].dt.date >= start_date)
+            & (filtered_df[date_col].dt.date <= end_date)
         ]
-    ).columns
-)
 
-missing_count = int(
-    df.isna().sum().sum()
-)
+
+# ============================================================
+# MAIN KPI SECTION
+# ============================================================
+
+st.subheader("📌 Business Overview")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
+
+def safe_sum(column):
+    if column in filtered_df.columns:
+        return filtered_df[column].sum()
+    return 0
+
+
+def safe_mean(column):
+    if column in filtered_df.columns:
+        return filtered_df[column].mean()
+    return 0
+
+
+revenue = safe_sum("Revenue")
+profit = safe_sum("Profit")
+units = safe_sum("Units_Sold")
+marketing = safe_sum("Marketing_Spend")
+rating = safe_mean("Customer_Rating")
+
+profit_margin = (
+    (profit / revenue) * 100
+    if revenue != 0
+    else 0
+)
+
+
 with col1:
     st.metric(
-        "Rows",
-        f"{row_count:,}",
+        "💰 Revenue",
+        f"{revenue:,.2f}"
     )
 
 with col2:
     st.metric(
-        "Columns",
-        f"{column_count:,}",
+        "📈 Profit",
+        f"{profit:,.2f}"
     )
 
 with col3:
     st.metric(
-        "Numeric",
-        f"{numeric_count:,}",
+        "📦 Units Sold",
+        f"{units:,.0f}"
     )
 
 with col4:
     st.metric(
-        "Categorical",
-        f"{categorical_count:,}",
+        "💵 Profit Margin",
+        f"{profit_margin:.1f}%"
     )
 
 with col5:
     st.metric(
-        "Missing Cells",
-        f"{missing_count:,}",
+        "⭐ Avg Rating",
+        f"{rating:.2f}"
     )
 
 
-# ============================================================
-# DATA QUALITY
-# ============================================================
-
-quality_results = analyze_data_quality(df)
-
-quality_score = quality_results[
-    "quality_score"
-]
-
-st.markdown(
-    '<div class="section-title">Data Quality</div>',
-    unsafe_allow_html=True,
-)
-
-quality_col1, quality_col2 = st.columns(
-    [1, 2]
-)
-
-with quality_col1:
-
-    st.metric(
-        "Quality Score",
-        f"{quality_score:.1f}/100",
-    )
-
-with quality_col2:
-
-    if quality_score >= 90:
-
-        st.success(
-            "Dataset quality is relatively strong."
-        )
-
-    elif quality_score >= 70:
-
-        st.warning(
-            "Dataset has some quality issues "
-            "that should be reviewed."
-        )
-
-    else:
-
-        st.error(
-            "Dataset contains significant quality issues."
-        )
+st.divider()
 
 
 # ============================================================
 # TABS
 # ============================================================
 
-tabs = st.tabs(
-    [
-        "Overview",
-        "Data Quality",
-        "Insights",
-        "Explore",
-        "Statistics",
-        "Data",
-    ]
-)
+tabs = st.tabs([
+    "Overview",
+    "📈 Trends",
+    "🛍️ Products",
+    "🌍 Regions",
+    "📢 Marketing",
+    "👥 Customers",
+    "🔵 Relationships",
+    "📦 Distributions",
+    "🧹 Data Quality",
+    "🧠 Insights"
+])
 
 
 # ============================================================
-# OVERVIEW TAB
+# OVERVIEW
 # ============================================================
 
 with tabs[0]:
 
-    st.subheader(
-        "Dataset Overview"
+    st.header("Dataset Overview")
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+
+    c1.metric("Rows", f"{len(filtered_df):,}")
+    c2.metric("Columns", f"{len(filtered_df.columns):,}")
+    c3.metric("Numeric Columns", len(numeric_cols))
+    c4.metric("Categorical Columns", len(categorical_cols))
+    c5.metric(
+        "Missing Cells",
+        f"{filtered_df.isna().sum().sum():,}"
     )
 
-    overview_col1, overview_col2 = st.columns(
-        2
+    st.subheader("Column Types")
+
+    column_info = pd.DataFrame({
+        "Column": df.columns,
+        "Data Type": df.dtypes.astype(str),
+        "Non-Null": df.notna().sum().values,
+        "Missing": df.isna().sum().values,
+        "Unique": df.nunique(dropna=True).values
+    })
+
+    st.dataframe(
+        column_info,
+        use_container_width=True,
+        hide_index=True
     )
-
-    with overview_col1:
-
-        st.write(
-            "### Column Types"
-        )
-
-        type_table = pd.DataFrame(
-            {
-                "Column": df.columns,
-                "Data Type": [
-                    str(dtype)
-                    for dtype in df.dtypes
-                ],
-                "Non-Null": [
-                    int(df[column].notna().sum())
-                    for column in df.columns
-                ],
-                "Unique": [
-                    int(
-                        df[column].nunique(
-                            dropna=True
-                        )
-                    )
-                    for column in df.columns
-                ],
-            }
-        )
-
-        st.dataframe(
-            type_table,
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    with overview_col2:
-
-        st.write(
-            "### Numerical Summary"
-        )
-
-        summary = numeric_summary(df)
-
-        if summary.empty:
-
-            st.info(
-                "No numerical columns detected."
-            )
-
-        else:
-
-            st.dataframe(
-                summary,
-                use_container_width=True,
-                hide_index=True,
-            )
 
 
 # ============================================================
-# DATA QUALITY TAB
+# TRENDS
 # ============================================================
 
 with tabs[1]:
 
-    st.subheader(
-        "Data Quality Analysis"
-    )
+    st.header("📈 Interactive Business Trends")
 
-    missing_df = quality_results[
-        "missing"
-    ]
+    if date_col and filtered_df[date_col].notna().any():
 
-    st.write(
-        "### Missing Values"
-    )
+        metric_options = [
+            col for col in
+            ["Revenue", "Profit", "Units_Sold", "Marketing_Spend", "Returns"]
+            if col in filtered_df.columns
+        ]
 
-    st.dataframe(
-        missing_df,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.write(
-        "### Duplicate Records"
-    )
-
-    duplicate_info = quality_results[
-        "duplicates"
-    ]
-
-    duplicate_col1, duplicate_col2 = st.columns(
-        2
-    )
-
-    with duplicate_col1:
-
-        st.metric(
-            "Duplicate Rows",
-            duplicate_info[
-                "duplicate_count"
-            ],
+        selected_metric = st.selectbox(
+            "Select metric",
+            metric_options
         )
 
-    with duplicate_col2:
-
-        st.metric(
-            "Duplicate %",
-            f'{duplicate_info["duplicate_percentage"]:.2f}%',
+        aggregation = st.selectbox(
+            "Time aggregation",
+            ["Daily", "Weekly", "Monthly"]
         )
 
-    st.write(
-        "### Constant Columns"
-    )
+        temp = filtered_df[
+            [date_col, selected_metric]
+        ].dropna()
 
-    constant_columns = quality_results[
-        "constant_columns"
-    ]
+        if aggregation == "Daily":
+            temp["Period"] = temp[date_col].dt.date
 
-    if constant_columns:
-
-        st.warning(
-            f"Detected {len(constant_columns)} "
-            "constant column(s)."
-        )
-
-        st.write(
-            constant_columns
-        )
-
-    else:
-
-        st.success(
-            "No constant columns detected."
-        )
-
-    st.write(
-        "### Potential Identifier Columns"
-    )
-
-    potential_ids = quality_results[
-        "potential_id_columns"
-    ]
-
-    if potential_ids:
-
-        st.info(
-            "Potential identifier columns: "
-            + ", ".join(
-                map(str, potential_ids)
+        elif aggregation == "Weekly":
+            temp["Period"] = (
+                temp[date_col]
+                .dt.to_period("W")
+                .apply(lambda x: x.start_time)
             )
+
+        else:
+            temp["Period"] = (
+                temp[date_col]
+                .dt.to_period("M")
+                .apply(lambda x: x.start_time)
+            )
+
+        trend = (
+            temp.groupby("Period")[selected_metric]
+            .sum()
+            .reset_index()
+        )
+
+        fig = px.line(
+            trend,
+            x="Period",
+            y=selected_metric,
+            markers=True,
+            title=f"{selected_metric} Over Time"
+        )
+
+        fig.update_layout(
+            hovermode="x unified",
+            height=500
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
         )
 
     else:
-
-        st.write(
-            "No obvious identifier columns detected."
-        )
-
-    st.write(
-        "### Numeric Outliers"
-    )
-
-    outlier_df = quality_results[
-        "outliers"
-    ]
-
-    if outlier_df.empty:
-
-        st.info(
-            "No numerical columns available "
-            "for outlier analysis."
-        )
-
-    else:
-
-        st.dataframe(
-            outlier_df,
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.warning("A valid Date column is required for trend analysis.")
 
 
 # ============================================================
-# INSIGHTS TAB
+# PRODUCTS
 # ============================================================
 
 with tabs[2]:
 
-    st.subheader(
-        "Automated Business Insights"
-    )
+    st.header("🛍️ Product Performance")
 
-    insights = generate_insights(
-        df,
-        max_insights=20,
-    )
+    if "Product" in filtered_df.columns:
 
-    if not insights:
-
-        st.success(
-            "No major rule-based insights were detected."
+        product_metric = st.selectbox(
+            "Metric",
+            [
+                col for col in
+                ["Revenue", "Profit", "Units_Sold",
+                 "Marketing_Spend", "Returns", "Customer_Rating"]
+                if col in filtered_df.columns
+            ],
+            key="product_metric"
         )
 
-    else:
+        product_data = (
+            filtered_df
+            .groupby("Product")[product_metric]
+            .agg(["sum", "mean"])
+            .reset_index()
+        )
 
-        for insight in insights:
+        product_data = product_data.sort_values(
+            "sum",
+            ascending=False
+        )
 
-            severity = insight[
-                "severity"
+        fig = px.bar(
+            product_data,
+            x="Product",
+            y="sum",
+            title=f"{product_metric} by Product",
+            text_auto=".2s"
+        )
+
+        fig.update_layout(
+            xaxis_title="Product",
+            yaxis_title=product_metric,
+            height=500
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+        st.subheader("Product Summary")
+
+        summary_cols = [
+            c for c in [
+                "Units_Sold",
+                "Revenue",
+                "Profit",
+                "Returns",
+                "Customer_Rating"
             ]
+            if c in filtered_df.columns
+        ]
 
-            title = insight[
-                "title"
-            ]
+        product_summary = (
+            filtered_df
+            .groupby("Product")[summary_cols]
+            .agg({
+                c: "mean" if c == "Customer_Rating"
+                else "sum"
+                for c in summary_cols
+            })
+            .reset_index()
+        )
 
-            message = insight[
-                "message"
-            ]
-
-            if severity == "critical":
-
-                st.error(
-                    f"🔴 {title}\n\n{message}"
-                )
-
-            elif severity == "high":
-
-                st.warning(
-                    f"🟠 {title}\n\n{message}"
-                )
-
-            elif severity == "medium":
-
-                st.info(
-                    f"🔵 {title}\n\n{message}"
-                )
-
-            else:
-
-                st.write(
-                    f"**{title}**\n\n{message}"
-                )
+        st.dataframe(
+            product_summary,
+            use_container_width=True,
+            hide_index=True
+        )
 
 
 # ============================================================
-# EXPLORE TAB
+# REGIONS
 # ============================================================
 
 with tabs[3]:
 
-    st.subheader(
-        "Interactive Data Exploration"
-    )
+    st.header("🌍 Regional Performance")
 
-    numeric_columns = df.select_dtypes(
-        include="number"
-    ).columns.tolist()
+    if "Region" in filtered_df.columns:
 
-    categorical_columns = df.select_dtypes(
-        include=[
-            "object",
-            "category",
-            "bool",
-        ]
-    ).columns.tolist()
-
-    all_columns = df.columns.tolist()
-
-    chart_type = st.selectbox(
-        "Chart type",
-        [
-            "Histogram",
-            "Box Plot",
-            "Bar Chart",
-            "Scatter Plot",
-            "Correlation Heatmap",
-            "Time Series",
-        ],
-    )
-
-    if chart_type == "Histogram":
-
-        if not numeric_columns:
-
-            st.warning(
-                "No numerical columns available."
-            )
-
-        else:
-
-            column = st.selectbox(
-                "Numerical column",
-                numeric_columns,
-            )
-
-            bins = st.slider(
-                "Number of bins",
-                min_value=5,
-                max_value=100,
-                value=30,
-            )
-
-            fig = create_histogram(
-                df,
-                column,
-                bins=bins,
-            )
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True,
-            )
-
-    elif chart_type == "Box Plot":
-
-        if not numeric_columns:
-
-            st.warning(
-                "No numerical columns available."
-            )
-
-        else:
-
-            column = st.selectbox(
-                "Numerical column",
-                numeric_columns,
-            )
-
-            fig = create_boxplot(
-                df,
-                column,
-            )
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True,
-            )
-
-    elif chart_type == "Bar Chart":
-
-        if not categorical_columns:
-
-            st.warning(
-                "No categorical columns available."
-            )
-
-        else:
-
-            category_column = st.selectbox(
-                "Category column",
-                categorical_columns,
-            )
-
-            use_value_column = st.checkbox(
-                "Aggregate a numerical value",
-                value=False,
-            )
-
-            value_column = None
-
-            if use_value_column:
-
-                if not numeric_columns:
-
-                    st.warning(
-                        "No numerical columns available."
-                    )
-
-                else:
-
-                    value_column = st.selectbox(
-                        "Value column",
-                        numeric_columns,
-                    )
-
-            top_n = st.slider(
-                "Top categories",
-                min_value=5,
-                max_value=50,
-                value=15,
-            )
-
-            fig = create_bar_chart(
-                df,
-                category_column,
-                value_column,
-                top_n,
-            )
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True,
-            )
-
-    elif chart_type == "Scatter Plot":
-
-        if len(numeric_columns) < 2:
-
-            st.warning(
-                "At least two numerical columns "
-                "are required."
-            )
-
-        else:
-
-            x_column = st.selectbox(
-                "X-axis",
-                numeric_columns,
-            )
-
-            y_column = st.selectbox(
-                "Y-axis",
-                numeric_columns,
-                index=(
-                    1
-                    if len(numeric_columns) > 1
-                    else 0
-                ),
-            )
-
-            color_column = st.selectbox(
-                "Color by",
-                ["None"] + categorical_columns,
-            )
-
-            if color_column == "None":
-                color_column = None
-
-            fig = create_scatter_plot(
-                df,
-                x_column,
-                y_column,
-                color_column,
-            )
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True,
-            )
-
-    elif chart_type == "Correlation Heatmap":
-
-        fig = create_correlation_heatmap(
-            df
+        region_metric = st.selectbox(
+            "Select metric",
+            [
+                c for c in
+                ["Revenue", "Profit", "Units_Sold",
+                 "Marketing_Spend", "Returns"]
+                if c in filtered_df.columns
+            ],
+            key="region_metric"
         )
 
-        if fig is None:
-
-            st.warning(
-                "At least two numerical columns "
-                "are required."
-            )
-
-        else:
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True,
-            )
-
-    elif chart_type == "Time Series":
-
-        date_column = st.selectbox(
-            "Date column",
-            all_columns,
+        region_data = (
+            filtered_df
+            .groupby("Region")[region_metric]
+            .sum()
+            .reset_index()
+            .sort_values(region_metric, ascending=False)
         )
 
-        if not numeric_columns:
+        fig = px.bar(
+            region_data,
+            x="Region",
+            y=region_metric,
+            text_auto=".2s",
+            title=f"{region_metric} by Region"
+        )
 
-            st.warning(
-                "No numerical value columns available."
+        fig.update_layout(height=500)
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+        # Revenue share
+        if region_metric == "Revenue":
+
+            st.subheader("Revenue Contribution")
+
+            pie = px.pie(
+                region_data,
+                names="Region",
+                values="Revenue",
+                hole=0.45,
+                title="Revenue Share by Region"
             )
 
-        else:
-
-            value_column = st.selectbox(
-                "Value column",
-                numeric_columns,
+            st.plotly_chart(
+                pie,
+                use_container_width=True
             )
-
-            aggregation = st.selectbox(
-                "Aggregation",
-                [
-                    "sum",
-                    "mean",
-                    "median",
-                    "min",
-                    "max",
-                    "count",
-                ],
-            )
-
-            try:
-
-                fig = create_time_series(
-                    df,
-                    date_column,
-                    value_column,
-                    aggregation,
-                )
-
-                st.plotly_chart(
-                    fig,
-                    use_container_width=True,
-                )
-
-            except Exception as error:
-
-                st.error(
-                    f"Unable to create time series: {error}"
-                )
 
 
 # ============================================================
-# STATISTICS TAB
+# MARKETING
 # ============================================================
 
 with tabs[4]:
 
-    st.subheader(
-        "Statistical Analysis"
-    )
+    st.header("📢 Marketing Channel Analysis")
 
-    st.write(
-        "### Strongest Numerical Relationships"
-    )
+    if "Marketing_Channel" in filtered_df.columns:
 
-    correlations = strongest_correlations(
-        df,
-        top_n=20,
-    )
-
-    if correlations.empty:
-
-        st.info(
-            "At least two numerical columns are "
-            "required for correlation analysis."
+        channel_metric = st.selectbox(
+            "Metric",
+            [
+                c for c in
+                ["Revenue", "Profit", "Units_Sold",
+                 "Marketing_Spend"]
+                if c in filtered_df.columns
+            ],
+            key="channel_metric"
         )
 
-    else:
-
-        st.dataframe(
-            correlations,
-            use_container_width=True,
-            hide_index=True,
+        channel_data = (
+            filtered_df
+            .groupby("Marketing_Channel")[channel_metric]
+            .sum()
+            .reset_index()
+            .sort_values(
+                channel_metric,
+                ascending=False
+            )
         )
 
-    st.write(
-        "### Numerical Skewness"
-    )
-
-    skewness = detect_numeric_skewness(
-        df
-    )
-
-    if skewness.empty:
-
-        st.info(
-            "No numerical variables available."
+        fig = px.bar(
+            channel_data,
+            x="Marketing_Channel",
+            y=channel_metric,
+            text_auto=".2s",
+            title=f"{channel_metric} by Marketing Channel"
         )
 
-    else:
+        fig.update_layout(height=500)
 
-        st.dataframe(
-            skewness,
-            use_container_width=True,
-            hide_index=True,
+        st.plotly_chart(
+            fig,
+            use_container_width=True
         )
+
+        # Marketing efficiency
+        if (
+            "Revenue" in filtered_df.columns
+            and "Marketing_Spend" in filtered_df.columns
+        ):
+
+            efficiency = (
+                filtered_df
+                .groupby("Marketing_Channel")
+                .agg({
+                    "Revenue": "sum",
+                    "Marketing_Spend": "sum"
+                })
+                .reset_index()
+            )
+
+            efficiency["ROAS"] = (
+                efficiency["Revenue"]
+                / efficiency["Marketing_Spend"].replace(0, np.nan)
+            )
+
+            st.subheader("Marketing Efficiency")
+
+            fig2 = px.bar(
+                efficiency.sort_values(
+                    "ROAS",
+                    ascending=False
+                ),
+                x="Marketing_Channel",
+                y="ROAS",
+                text_auto=".2f",
+                title="Revenue / Marketing Spend"
+            )
+
+            fig2.update_layout(height=450)
+
+            st.plotly_chart(
+                fig2,
+                use_container_width=True
+            )
 
 
 # ============================================================
-# DATA TAB
+# CUSTOMERS
 # ============================================================
 
 with tabs[5]:
 
-    st.subheader(
-        "Dataset Explorer"
-    )
+    st.header("👥 Customer Analysis")
 
-    st.write(
-        "Use the controls below to filter the dataset."
-    )
+    if "Customer_Type" in filtered_df.columns:
 
-    filtered_df = df.copy()
+        customer_metric = st.selectbox(
+            "Metric",
+            [
+                c for c in
+                ["Revenue", "Profit", "Units_Sold",
+                 "Returns", "Customer_Rating"]
+                if c in filtered_df.columns
+            ],
+            key="customer_metric"
+        )
 
-    filter_column = st.selectbox(
-        "Filter column",
-        ["None"] + all_columns,
-    )
+        customer_data = (
+            filtered_df
+            .groupby("Customer_Type")[customer_metric]
+            .agg(["sum", "mean"])
+            .reset_index()
+        )
 
-    if filter_column != "None":
+        fig = px.bar(
+            customer_data,
+            x="Customer_Type",
+            y="sum",
+            text_auto=".2s",
+            title=f"{customer_metric} by Customer Type"
+        )
 
-        column = filtered_df[
-            filter_column
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+        st.subheader("Customer Summary")
+
+        st.dataframe(
+            customer_data,
+            use_container_width=True,
+            hide_index=True
+        )
+
+
+# ============================================================
+# RELATIONSHIPS
+# ============================================================
+
+with tabs[6]:
+
+    st.header("🔵 Numerical Relationships")
+
+    relationship_cols = [
+        c for c in [
+            "Revenue",
+            "Profit",
+            "Units_Sold",
+            "Unit_Price",
+            "Discount_Pct",
+            "Marketing_Spend",
+            "Returns",
+            "Inventory_End",
+            "Customer_Rating"
         ]
+        if c in filtered_df.columns
+    ]
 
-        if pd.api.types.is_numeric_dtype(
-            column
-        ):
+    if len(relationship_cols) >= 2:
 
-            minimum = float(
-                column.min()
-            )
+        c1, c2 = st.columns(2)
 
-            maximum = float(
-                column.max()
-            )
-
-            if minimum != maximum:
-
-                selected_range = st.slider(
-                    "Value range",
-                    min_value=minimum,
-                    max_value=maximum,
-                    value=(
-                        minimum,
-                        maximum,
-                    ),
+        with c1:
+            x_variable = st.selectbox(
+                "X-axis",
+                relationship_cols,
+                index=(
+                    relationship_cols.index("Revenue")
+                    if "Revenue" in relationship_cols
+                    else 0
                 )
+            )
 
-                filtered_df = filtered_df[
-                    filtered_df[
-                        filter_column
-                    ].between(
-                        selected_range[0],
-                        selected_range[1],
-                    )
-                ]
+        with c2:
+            y_variable = st.selectbox(
+                "Y-axis",
+                relationship_cols,
+                index=(
+                    relationship_cols.index("Profit")
+                    if "Profit" in relationship_cols
+                    else 1
+                )
+            )
+
+        color_options = ["None"]
+
+        for col in [
+            "Region",
+            "Product",
+            "Customer_Type",
+            "Marketing_Channel"
+        ]:
+            if col in filtered_df.columns:
+                color_options.append(col)
+
+        color_by = st.selectbox(
+            "Color points by",
+            color_options
+        )
+
+        plot_df = filtered_df[
+            [x_variable, y_variable]
+            + ([] if color_by == "None" else [color_by])
+        ].dropna()
+
+        fig = px.scatter(
+            plot_df,
+            x=x_variable,
+            y=y_variable,
+            color=None if color_by == "None" else color_by,
+            hover_data=plot_df.columns,
+            title=f"{y_variable} vs {x_variable}"
+        )
+
+        fig.update_traces(
+            marker=dict(
+                size=9,
+                opacity=0.7
+            )
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+        correlation = (
+            plot_df[x_variable]
+            .corr(plot_df[y_variable])
+        )
+
+        if correlation >= 0.7:
+            strength = "Strong positive"
+        elif correlation >= 0.4:
+            strength = "Moderate positive"
+        elif correlation >= 0.2:
+            strength = "Weak positive"
+        elif correlation <= -0.7:
+            strength = "Strong negative"
+        elif correlation <= -0.4:
+            strength = "Moderate negative"
+        elif correlation <= -0.2:
+            strength = "Weak negative"
+        else:
+            strength = "Very weak"
+
+        st.info(
+            f"Correlation between **{x_variable}** and "
+            f"**{y_variable}**: **{correlation:.3f}** "
+            f"({strength}). Correlation does not imply causation."
+        )
+
+        # Correlation heatmap
+        st.subheader("Correlation Heatmap")
+
+        corr = filtered_df[relationship_cols].corr()
+
+        fig_heatmap = px.imshow(
+            corr,
+            text_auto=".2f",
+            aspect="auto",
+            title="Numerical Correlation Matrix"
+        )
+
+        fig_heatmap.update_layout(
+            height=650
+        )
+
+        st.plotly_chart(
+            fig_heatmap,
+            use_container_width=True
+        )
+
+
+# ============================================================
+# DISTRIBUTIONS
+# ============================================================
+
+with tabs[7]:
+
+    st.header("📦 Distribution & Outlier Explorer")
+
+    if numeric_cols:
+
+        selected_distribution = st.selectbox(
+            "Select numerical column",
+            numeric_cols
+        )
+
+        chart_type = st.selectbox(
+            "Visualization",
+            [
+                "Histogram",
+                "Box Plot"
+            ]
+        )
+
+        values = filtered_df[
+            selected_distribution
+        ].dropna()
+
+        if chart_type == "Histogram":
+
+            bins = st.slider(
+                "Number of bins",
+                5,
+                100,
+                30
+            )
+
+            fig = px.histogram(
+                values,
+                x=selected_distribution,
+                nbins=bins,
+                marginal="box",
+                title=f"Distribution of {selected_distribution}"
+            )
 
         else:
 
-            values = (
-                column
-                .dropna()
-                .astype(str)
-                .unique()
-                .tolist()
+            fig = px.box(
+                values,
+                y=selected_distribution,
+                points="outliers",
+                title=f"Box Plot of {selected_distribution}"
             )
 
-            if len(values) <= 100:
+        fig.update_layout(
+            height=550
+        )
 
-                selected_values = st.multiselect(
-                    "Select values",
-                    options=sorted(values),
-                )
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
 
-                if selected_values:
+        # Statistics
+        c1, c2, c3, c4 = st.columns(4)
 
-                    filtered_df = filtered_df[
-                        filtered_df[
-                            filter_column
-                        ].astype(str).isin(
-                            selected_values
-                        )
-                    ]
+        c1.metric(
+            "Mean",
+            f"{values.mean():,.2f}"
+        )
 
-    st.write(
-        f"Showing {len(filtered_df):,} "
-        f"of {len(df):,} rows"
+        c2.metric(
+            "Median",
+            f"{values.median():,.2f}"
+        )
+
+        c3.metric(
+            "Std Dev",
+            f"{values.std():,.2f}"
+        )
+
+        c4.metric(
+            "Skewness",
+            f"{values.skew():,.2f}"
+        )
+
+
+# ============================================================
+# DATA QUALITY
+# ============================================================
+
+with tabs[8]:
+
+    st.header("🧹 Data Quality Analysis")
+
+    total_cells = (
+        len(filtered_df)
+        * len(filtered_df.columns)
+    )
+
+    missing_cells = (
+        filtered_df.isna().sum().sum()
+    )
+
+    quality_score = (
+        100 - (missing_cells / total_cells * 100)
+        if total_cells > 0
+        else 0
+    )
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric(
+        "Quality Score",
+        f"{quality_score:.1f}/100"
+    )
+
+    c2.metric(
+        "Missing Cells",
+        f"{missing_cells:,}"
+    )
+
+    duplicate_count = filtered_df.duplicated().sum()
+
+    c3.metric(
+        "Duplicate Rows",
+        f"{duplicate_count:,}"
+    )
+
+    st.subheader("Missing Values")
+
+    missing = pd.DataFrame({
+        "Column": filtered_df.columns,
+        "Missing Count": filtered_df.isna().sum().values
+    })
+
+    missing["Missing %"] = (
+        missing["Missing Count"]
+        / len(filtered_df)
+        * 100
+    )
+
+    missing["Severity"] = np.select(
+        [
+            missing["Missing %"] == 0,
+            missing["Missing %"] < 5,
+            missing["Missing %"] < 15
+        ],
+        [
+            "None",
+            "Low",
+            "Medium"
+        ],
+        default="High"
+    )
+
+    missing = missing.sort_values(
+        "Missing Count",
+        ascending=False
     )
 
     st.dataframe(
-        filtered_df,
+        missing,
         use_container_width=True,
-        height=500,
+        hide_index=True
     )
+
+    st.subheader("Duplicate Records")
+
+    if duplicate_count == 0:
+        st.success("No duplicate records detected.")
+    else:
+        st.warning(
+            f"{duplicate_count} duplicate rows detected."
+        )
+
+    # High cardinality
+    st.subheader("High-Cardinality Columns")
+
+    cardinality = []
+
+    for col in df.columns:
+
+        unique_count = df[col].nunique(
+            dropna=True
+        )
+
+        unique_ratio = (
+            unique_count / len(df)
+            if len(df) > 0
+            else 0
+        )
+
+        if unique_ratio >= 0.8:
+            cardinality.append({
+                "Column": col,
+                "Unique Values": unique_count,
+                "Unique Ratio": unique_ratio
+            })
+
+    if cardinality:
+
+        cardinality_df = pd.DataFrame(
+            cardinality
+        )
+
+        cardinality_df["Unique Ratio"] *= 100
+
+        st.dataframe(
+            cardinality_df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.caption(
+            "High cardinality means a large proportion of values "
+            "are unique. This does not automatically mean the "
+            "column is an identifier."
+        )
+
+    else:
+        st.success(
+            "No unusually high-cardinality columns detected."
+        )
+
+
+# ============================================================
+# AUTOMATED INSIGHTS
+# ============================================================
+
+with tabs[9]:
+
+    st.header("🧠 Automated Business Insights")
+
+    insights = []
+    recommendations = []
+
+    # --------------------------------------------------------
+    # Revenue / Profit
+    # --------------------------------------------------------
+
+    if "Revenue" in filtered_df.columns:
+
+        total_revenue = filtered_df["Revenue"].sum()
+
+        if total_revenue > 0:
+            insights.append(
+                f"Total revenue for the selected data is "
+                f"**{total_revenue:,.2f}**."
+            )
+
+    if "Profit" in filtered_df.columns:
+
+        total_profit = filtered_df["Profit"].sum()
+
+        if total_profit > 0:
+
+            insights.append(
+                f"Total profit is **{total_profit:,.2f}**, "
+                f"with an estimated profit margin of "
+                f"**{profit_margin:.1f}%**."
+            )
+
+            if profit_margin < 10:
+
+                recommendations.append(
+                    "Profit margin is relatively low. "
+                    "Review pricing, discounts, returns and "
+                    "marketing costs to identify margin pressure."
+                )
+
+            elif profit_margin > 25:
+
+                recommendations.append(
+                    "Profit margin is strong. Investigate which "
+                    "products, regions and channels are contributing "
+                    "most to this performance."
+                )
+
+
+    # --------------------------------------------------------
+    # Correlation
+    # --------------------------------------------------------
+
+    if (
+        "Revenue" in filtered_df.columns
+        and "Profit" in filtered_df.columns
+    ):
+
+        corr = filtered_df[
+            ["Revenue", "Profit"]
+        ].corr().iloc[0, 1]
+
+        if abs(corr) >= 0.7:
+
+            insights.append(
+                f"Revenue and Profit show a strong correlation "
+                f"of **{corr:.2f}**."
+            )
+
+            recommendations.append(
+                "Because revenue and profit move closely together, "
+                "investigate the factors that drive revenue while "
+                "protecting the current profit margin."
+            )
+
+
+    # --------------------------------------------------------
+    # Skewness
+    # --------------------------------------------------------
+
+    for col in numeric_cols:
+
+        if col not in filtered_df.columns:
+            continue
+
+        series = filtered_df[col].dropna()
+
+        if len(series) < 3:
+            continue
+
+        skew = series.skew()
+
+        if abs(skew) > 1:
+
+            direction = (
+                "right-skewed"
+                if skew > 0
+                else "left-skewed"
+            )
+
+            insights.append(
+                f"**{col}** is strongly {direction} "
+                f"with skewness of **{skew:.2f}**."
+            )
+
+
+    # --------------------------------------------------------
+    # Missing values
+    # --------------------------------------------------------
+
+    missing_cols = (
+        filtered_df.isna().sum()
+    )
+
+    missing_cols = missing_cols[
+        missing_cols > 0
+    ]
+
+    for col, count in missing_cols.items():
+
+        percentage = (
+            count / len(filtered_df) * 100
+        )
+
+        if percentage >= 5:
+
+            recommendations.append(
+                f"Review missing values in **{col}** "
+                f"({percentage:.1f}% of rows) before using "
+                f"this variable for modeling."
+            )
+
+
+    # --------------------------------------------------------
+    # Marketing
+    # --------------------------------------------------------
+
+    if (
+        "Marketing_Channel" in filtered_df.columns
+        and "Revenue" in filtered_df.columns
+    ):
+
+        channel_revenue = (
+            filtered_df
+            .groupby("Marketing_Channel")["Revenue"]
+            .sum()
+            .sort_values(ascending=False)
+        )
+
+        if len(channel_revenue) > 0:
+
+            best_channel = channel_revenue.index[0]
+
+            insights.append(
+                f"**{best_channel}** generates the highest "
+                f"total revenue among the selected marketing channels."
+            )
+
+            recommendations.append(
+                f"Evaluate the campaigns associated with "
+                f"**{best_channel}** and identify which characteristics "
+                f"could be replicated in lower-performing channels."
+            )
+
+
+    # --------------------------------------------------------
+    # Product
+    # --------------------------------------------------------
+
+    if (
+        "Product" in filtered_df.columns
+        and "Revenue" in filtered_df.columns
+    ):
+
+        product_revenue = (
+            filtered_df
+            .groupby("Product")["Revenue"]
+            .sum()
+            .sort_values(ascending=False)
+        )
+
+        if len(product_revenue) > 0:
+
+            best_product = product_revenue.index[0]
+
+            insights.append(
+                f"**{best_product}** is the highest-revenue "
+                f"product in the selected dataset."
+            )
+
+            recommendations.append(
+                f"Investigate pricing, demand and marketing "
+                f"patterns behind **{best_product}**'s performance."
+            )
+
+
+    # --------------------------------------------------------
+    # DISPLAY
+    # --------------------------------------------------------
+
+    if insights:
+
+        st.subheader("Key Findings")
+
+        for insight in insights:
+
+            st.markdown(
+                f"""
+                <div class="insight-box">
+                    🔎 {insight}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    else:
+
+        st.info(
+            "Not enough information to generate automated insights."
+        )
+
+
+    if recommendations:
+
+        st.subheader("💡 Business Recommendations")
+
+        for recommendation in recommendations:
+
+            st.markdown(
+                f"""
+                <div class="recommendation-box">
+                    💡 {recommendation}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
 
 # ============================================================
@@ -1146,6 +1331,6 @@ with tabs[5]:
 st.divider()
 
 st.caption(
-    "InsightAI Analytics | Automated analytics "
-    "with transparent statistical methods."
+    "InsightAI Analytics | Interactive analytics with transparent "
+    "statistical methods."
 )
