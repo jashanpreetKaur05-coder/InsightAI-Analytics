@@ -10,3 +10,7 @@ pyarrow
 python-dotenv
 openai
 joblib
+streamlit
+pandas
+numpy
+plotly
